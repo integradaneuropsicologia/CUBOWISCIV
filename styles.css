@@ -1,0 +1,256 @@
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #fff;
+  color: #222;
+  font-family: 'Segoe UI', sans-serif;
+  overflow: auto;
+  align-items: center;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+}
+
+h1 {
+  color: #ffd600;
+  margin: 18px 0 8px 0;
+  font-size: 2rem;
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+#container {
+  flex: 1;
+  display: flex;
+  width: 100vw;
+  height: 100%;
+  align-items: stretch;
+  justify-content: center;
+  box-sizing: border-box;
+  overflow: auto;
+  gap: 0;
+}
+
+#areaMontagem {
+  flex: 1;
+  min-width: 40vw;
+  background: #fff;
+  border-right: 3px solid #eee;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  position: relative;
+}
+
+#areaLivre {
+  width: 280px;
+  height: 280px;
+  background: black;
+  border: 1px solid #eee;
+  border-radius: 0px;
+  margin-top: 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 3px 2px 10px #0001;
+}
+
+#areaLivre .peca {
+  position: absolute;
+  z-index: 1;
+  cursor: move;
+  transition: box-shadow 0.18s;
+}
+
+#referenciaBox {
+  flex: 1;
+  min-width: 40vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  background: #fff;
+}
+
+#orientacoesInicial {
+  margin-top: 25px;
+  max-width: 380px;
+  font-size: 0.95rem;
+  color: #444;
+  text-align: center;
+}
+
+#orientacoesInicial p {
+  margin: 0;
+}
+
+
+#referencia {
+  display: grid;
+  margin-top: 20px;
+  gap: 0px;
+  border-radius: 0px;
+  padding: 1px;
+  background: #fff;
+  border: 5px solid black;
+  grid-auto-flow: row;
+  justify-content: center;
+  align-content: center;
+}
+
+/* DUAS ÚLTIMAS FASES – ROTACIONADAS 45° */
+#referencia.rotacionado {
+  transform-origin: center;
+  transform: rotate(-45deg);
+  display: grid;
+  margin-top: 50px;
+  gap: 0px;
+  border-radius: 0px;
+  padding: 1px;
+  background: #fff;
+  border: 5px solid black;
+  grid-auto-flow: row;
+  justify-content: center;
+  align-content: center;
+  box-shadow: none;
+}
+
+
+
+
+#referencia.rotacionado .peca {
+  border: none;
+  gap: 0px;
+}
+
+.peca {
+  width: 70px;
+  height: 70px;
+  border-radius: 0px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  font-weight: 700;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.peca.vermelha {
+  background: red;
+}
+
+.peca.branca {
+  background: #fff;
+}
+
+.peca.dividida {
+  background: linear-gradient(135deg, red 50%, white 50%);
+}
+
+.peca span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+#pecasDisponiveis {
+  display: flex;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+#pecasDisponiveis .peca {
+  box-shadow: 1px 1px 10px #dadada;
+}
+
+button {
+  margin-top: 18px;
+  padding: 12px 28px;
+  font-size: 1.1rem;
+  border-radius: 8px;
+  border: none;
+  background: #ffd600;
+  color: #222;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 1px 6px #0001;
+  transition: background 0.2s, transform 0.1s;
+}
+
+button:hover {
+  background: #ffe36b;
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+#resultado {
+  margin-top: 20px;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #333;
+  min-height: 1.5em;
+  text-align: center;
+}
+
+#faseInfo,
+#cronometro {
+  margin-top: 10px;
+  font-size: 1.1rem;
+  color: #666;
+}
+
+#cronometro {
+  font-size: 1.4rem;
+  color: #c00;
+}
+
+/* Responsivo */
+@media (max-width: 768px) {
+  #container {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+  }
+
+  #referenciaBox {
+    order: 1;
+  }
+
+  #areaMontagem {
+    order: 2;
+    border-right: none;
+  }
+
+  #areaLivre {
+    order: 3;
+  }
+
+  #pecasDisponiveis {
+    order: 4;
+    flex-wrap: wrap;
+  }
+
+  #cronometro {
+    order: 5;
+    margin: 10px 0;
+  }
+
+  button {
+    order: 6;
+    margin-bottom: 20px;
+  }
+}
