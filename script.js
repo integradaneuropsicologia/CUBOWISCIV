@@ -154,6 +154,56 @@ let cronometroIntervalo = null;
 let painelResumo = null;
 let temposFases = [];
 
+// Arraste manual dentro da área de montagem (mantém a rotação visual)
+let mouseDraggingPiece = null;
+let mouseDragOffsetX = 0;
+let mouseDragOffsetY = 0;
+
+function enableMouseDrag(peca) {
+  peca.addEventListener('mousedown', function (e) {
+    // Só botão esquerdo
+    if (e.button !== 0) return;
+
+    // 👉 NÃO vamos mais bloquear quando for SPAN
+    // if (e.target.tagName === 'SPAN') return;
+
+    e.preventDefault();
+    mouseDraggingPiece = peca;
+
+    const rect = peca.getBoundingClientRect();
+    mouseDragOffsetX = e.clientX - rect.left;
+    mouseDragOffsetY = e.clientY - rect.top;
+
+    peca.style.zIndex = 1000;
+  });
+}
+
+
+// Move a peça conforme o mouse
+document.addEventListener('mousemove', function (e) {
+  if (!mouseDraggingPiece) return;
+
+  const areaRect = areaLivre.getBoundingClientRect();
+  let x = e.clientX - areaRect.left - mouseDragOffsetX;
+  let y = e.clientY - areaRect.top  - mouseDragOffsetY;
+
+  x = Math.max(0, Math.min(x, areaLivre.clientWidth  - 70));
+  y = Math.max(0, Math.min(y, areaLivre.clientHeight - 70));
+
+  mouseDraggingPiece.style.position = 'absolute';
+  mouseDraggingPiece.style.left = x + 'px';
+  mouseDraggingPiece.style.top  = y + 'px';
+});
+
+// Solta a peça
+document.addEventListener('mouseup', function () {
+  if (!mouseDraggingPiece) return;
+  mouseDraggingPiece.style.zIndex = 1;
+  mouseDraggingPiece = null;
+});
+
+
+
 function formatarTempoSegundos(totalSegundos) {
   totalSegundos = totalSegundos || 0;
   const min = Math.floor(totalSegundos / 60);
@@ -419,23 +469,27 @@ function montarAreaLivre() {
   areaLivre.ondrop = function (e) {
     e.preventDefault();
     const tipoData = e.dataTransfer.getData('text');
-    const partes = tipoData.split('_');
-    const tipo = partes[0];
-    const rot = partes[1] || 0;
+    const partes   = tipoData.split('_');
+    const tipo     = partes[0];
+    const rot      = partes[1] || 0;
     const areaRect = areaLivre.getBoundingClientRect();
-    let offsetX = e.clientX - areaRect.left - dragOffset.x;
-    let offsetY = e.clientY - areaRect.top - dragOffset.y;
-    offsetX = Math.max(0, Math.min(offsetX, areaLivre.clientWidth - 70));
-    offsetY = Math.max(0, Math.min(offsetY, areaLivre.clientHeight - 70));
+    let offsetX    = e.clientX - areaRect.left - dragOffset.x;
+    let offsetY    = e.clientY - areaRect.top  - dragOffset.y;
+    offsetX        = Math.max(0, Math.min(offsetX, areaLivre.clientWidth  - 70));
+    offsetY        = Math.max(0, Math.min(offsetY, areaLivre.clientHeight - 70));
 
     const novaPeca = document.createElement('div');
     novaPeca.className = 'peca ' + tipo;
     novaPeca.style.left = offsetX + 'px';
     novaPeca.style.top  = offsetY + 'px';
     novaPeca.setAttribute('data-tipo', tipo);
-    novaPeca.setAttribute('data-rot', rot);
+    novaPeca.setAttribute('data-rot',  rot);
     novaPeca.style.transform = `rotate(${rot}deg)`;
+
+    // toca: arraste por toque (mobile)
     ativarToqueMobile(novaPeca);
+    // mouse: arraste manual (mantém rotação)
+    enableMouseDrag(novaPeca);
 
     if (tipo === 'dividida') {
       const botao = document.createElement('span');
@@ -449,7 +503,7 @@ function montarAreaLivre() {
       botao.onclick = function (e) {
         e.stopPropagation();
         let anguloAtual = parseInt(novaPeca.getAttribute('data-rot') || 0);
-        let novoAngulo = (anguloAtual + 45) % 360;
+        let novoAngulo  = (anguloAtual + 45) % 360;
         novaPeca.style.transform = `rotate(${novoAngulo}deg)`;
         novaPeca.setAttribute('data-rot', novoAngulo);
       };
@@ -457,11 +511,14 @@ function montarAreaLivre() {
       novaPeca.appendChild(botao);
     }
 
-    novaPeca.setAttribute('draggable', 'true');
-    novaPeca.addEventListener('dragstart', dragStartHandlerLivre);
+    // ❌ NÃO usamos mais draggable aqui
+    // novaPeca.setAttribute('draggable', 'true');
+    // novaPeca.addEventListener('dragstart', dragStartHandlerLivre);
+
     areaLivre.appendChild(novaPeca);
   };
 }
+
 
 function dragStartHandlerLivre(e) {
   const tipo = this.getAttribute('data-tipo');
