@@ -1,3 +1,5 @@
+
+
 // ====================== CONFIGURAÇÕES ======================
 const WEBAPP = "https://script.google.com/macros/s/AKfycbzKB9upgtV4jRI1SNA1nfBcqGRTXQMLRVBpb7QAxvkPtKm_RnWOsjmUN8aguZpYE8_Qgg/exec";
 const SHEET_NAME = "MontagemLivre";
@@ -9,13 +11,9 @@ const DRIVE_FOLDER_ID  = "1d1bYR4dnsSuoV3_3M9iiJ5MN8lMh6bTS";
 // estado do CPF
 let currentCPF = "";
 const SHEETDB_BASE_URL = "https://sheetdb.io/api/v1/8pmdh33s9fvy8";
-
 let currentPatientName = "";
 
-
-
-
-
+// ====================== BUSCA NOME (SHEETDB) ======================
 async function fetchPatientNameByCPF(cpf) {
   const cleanCPF = (cpf || '').replace(/\D/g, '');
   if (!cleanCPF) return "";
@@ -36,11 +34,10 @@ async function fetchPatientNameByCPF(cpf) {
     console.error('Erro ao buscar nome no SheetDB', e);
   }
 
-  // se não achou ou deu erro → sem nome
   return "";
 }
 
-// ====================== JSONP (PLANILHA) ======================
+// ====================== JSONP (PLANILHA GOOGLE) ======================
 function jsonp(url, params = {}) {
   return new Promise((resolve, reject) => {
     const cb = "cb_" + Math.random().toString(36).slice(2);
@@ -63,34 +60,34 @@ function jsonp(url, params = {}) {
 // ====================== CPF GATE ======================
 async function verifyCPF() {
   const input = document.getElementById('cpfInput');
-  const fb = document.getElementById('cpfFeedback');
-  const btn = document.getElementById('cpfCheckBtn');
-  const cpf = (input.value || '').replace(/\D/g,'');
+  const fb    = document.getElementById('cpfFeedback');
+  const btn   = document.getElementById('cpfCheckBtn');
+  const cpf   = (input.value || '').replace(/\D/g,'');
 
   if (!cpf) {
     fb.style.color = '#c00';
-    fb.innerText = 'Digite um CPF válido.';
+    fb.innerText   = 'Digite um CPF válido.';
     return;
   }
 
   fb.style.color = '#444';
-  fb.innerText = 'Verificando...';
-  btn.disabled = true;
+  fb.innerText   = 'Verificando...';
+  btn.disabled   = true;
 
   try {
     const resp = await jsonp(WEBAPP, { action: 'check', cpf, sheet: SHEET_NAME });
     if (!resp || !resp.ok) throw new Error(resp?.error || 'Erro');
 
-       if (resp.status === 'allowed') {
+    if (resp.status === 'allowed') {
       currentCPF = cpf;
 
       // tenta buscar o nome do paciente na planilha "Patients"
       currentPatientName = await fetchPatientNameByCPF(cpf);
 
       fb.style.color = '#0a7';
-      fb.innerText = 'Liberado! Você pode iniciar.';
+      fb.innerText   = 'Liberado! Você pode iniciar.';
       input.disabled = true;
-      btn.disabled = true;
+      btn.disabled   = true;
 
       setTimeout(() => {
         document.getElementById("cpfGate").style.display = "none";
@@ -111,24 +108,22 @@ async function verifyCPF() {
       if (resultado) {
         resultado.textContent = '';
       }
-    }
-
- else if (resp.status === 'already_answered') {
+    } else if (resp.status === 'already_answered') {
       fb.style.color = '#c00';
-      fb.innerText = 'Teste já respondido. Não é possível responder novamente.';
+      fb.innerText   = 'Teste já respondido. Não é possível responder novamente.';
     } else if (resp.status === 'not_allowed') {
       fb.style.color = '#c00';
-      fb.innerText = 'Teste não liberado para este CPF.';
+      fb.innerText   = 'Teste não liberado para este CPF.';
     } else if (resp.status === 'not_found') {
       fb.style.color = '#c00';
-      fb.innerText = 'CPF não encontrado.';
+      fb.innerText   = 'CPF não encontrado.';
     } else {
       fb.style.color = '#c00';
-      fb.innerText = 'Erro na verificação.';
+      fb.innerText   = 'Erro na verificação.';
     }
   } catch(e) {
     fb.style.color = '#c00';
-    fb.innerText = 'Falha na verificação. Tente novamente.';
+    fb.innerText   = 'Falha na verificação. Tente novamente.';
   } finally {
     if (!currentCPF) btn.disabled = false;
   }
@@ -145,15 +140,16 @@ const cronometroEl     = document.getElementById('cronometro');
 const pecasDisponiveis = document.getElementById('pecasDisponiveis');
 
 let inicioFaseTimestamp = null;
-let faseAtual = 0;
-let dragOffset = { x: 0, y: 0 };
-let tentativaAtual = 0;
-let pontuacoes = [];
-let tempoRestante = 0;
+let faseAtual           = 0;
+let dragOffset          = { x: 0, y: 0 };
+let tentativaAtual      = 0;
+let pontuacoes          = [];
+let tempoRestante       = 0;
 let cronometroIntervalo = null;
-let painelResumo = null;
-let temposFases = [];
+let painelResumo        = null;
+let temposFases         = [];
 
+// Arraste manual dentro da área de montagem (mantém a rotação visual)
 // Arraste manual dentro da área de montagem (mantém a rotação visual)
 let mouseDraggingPiece = null;
 let mouseDragOffsetX = 0;
@@ -164,8 +160,8 @@ function enableMouseDrag(peca) {
     // Só botão esquerdo
     if (e.button !== 0) return;
 
-    // 👉 NÃO vamos mais bloquear quando for SPAN
-    // if (e.target.tagName === 'SPAN') return;
+    // Se começou no botão de giro, NÃO inicia arraste
+    if (e.target.tagName === 'SPAN') return;
 
     e.preventDefault();
     mouseDraggingPiece = peca;
@@ -178,32 +174,55 @@ function enableMouseDrag(peca) {
   });
 }
 
+// helper: remove peça da área preta se ela sair totalmente dela
+function removeIfOutsideArea(peca) {
+  // só remove se a peça estiver de fato dentro da áreaLivre
+  if (!peca || peca.parentElement !== areaLivre) return false;
+
+  const areaRect  = areaLivre.getBoundingClientRect();
+  const pieceRect = peca.getBoundingClientRect();
+
+  const saiu =
+    pieceRect.right  < areaRect.left  ||
+    pieceRect.left   > areaRect.right ||
+    pieceRect.bottom < areaRect.top   ||
+    pieceRect.top    > areaRect.bottom;
+
+  if (saiu) {
+    peca.remove();
+    return true;
+  }
+  return false;
+}
 
 // Move a peça conforme o mouse
 document.addEventListener('mousemove', function (e) {
   if (!mouseDraggingPiece) return;
 
   const areaRect = areaLivre.getBoundingClientRect();
-  let x = e.clientX - areaRect.left - mouseDragOffsetX;
-  let y = e.clientY - areaRect.top  - mouseDragOffsetY;
-
-  x = Math.max(0, Math.min(x, areaLivre.clientWidth  - 70));
-  y = Math.max(0, Math.min(y, areaLivre.clientHeight - 70));
+  const x = e.clientX - areaRect.left - mouseDragOffsetX;
+  const y = e.clientY - areaRect.top  - mouseDragOffsetY;
 
   mouseDraggingPiece.style.position = 'absolute';
   mouseDraggingPiece.style.left = x + 'px';
   mouseDraggingPiece.style.top  = y + 'px';
+
+  // se saiu da área preta, some com a peça
+  if (removeIfOutsideArea(mouseDraggingPiece)) {
+    mouseDraggingPiece = null;
+  }
 });
 
 // Solta a peça
 document.addEventListener('mouseup', function () {
   if (!mouseDraggingPiece) return;
-  mouseDraggingPiece.style.zIndex = 1;
+  // se ainda existe (não foi removida), volta o z-index
+  if (document.body.contains(mouseDraggingPiece)) {
+    mouseDraggingPiece.style.zIndex = 1;
+  }
   mouseDraggingPiece = null;
 });
-
-
-
+// ====================== RESUMO / SNAPSHOT ======================
 function formatarTempoSegundos(totalSegundos) {
   totalSegundos = totalSegundos || 0;
   const min = Math.floor(totalSegundos / 60);
@@ -217,14 +236,14 @@ function garantirPainelResumo() {
 
   painelResumo = document.createElement('div');
   painelResumo.id = 'painelResumoFases';
-  painelResumo.style.position = 'absolute';
-  painelResumo.style.left = '-9999px';        // fora da tela, mas visível para o html2canvas
-  painelResumo.style.top = '0';
-  painelResumo.style.width = '900px';
+  painelResumo.style.position   = 'absolute';
+  painelResumo.style.left       = '-9999px';
+  painelResumo.style.top        = '0';
+  painelResumo.style.width      = '900px';
   painelResumo.style.background = '#ffffff';
-  painelResumo.style.color = '#000000';
-  painelResumo.style.padding = '16px';
-  painelResumo.style.boxSizing = 'border-box';
+  painelResumo.style.color      = '#000000';
+  painelResumo.style.padding    = '16px';
+  painelResumo.style.boxSizing  = 'border-box';
   painelResumo.style.fontFamily = "'Segoe UI', sans-serif";
 
   const titulo = document.createElement('h2');
@@ -237,38 +256,38 @@ function garantirPainelResumo() {
 }
 
 function registrarFaseSnapshot(faseIndex, tempoGastoSegundos) {
-  const painel = garantirPainelResumo();
+  const painel    = garantirPainelResumo();
   const faseNumero = faseIndex + 1;
-  const tempoFmt = formatarTempoSegundos(tempoGastoSegundos || 0);
+  const tempoFmt   = formatarTempoSegundos(tempoGastoSegundos || 0);
 
   const card = document.createElement('div');
-  card.style.display = 'flex';
-  card.style.alignItems = 'center';
-  card.style.gap = '16px';
-  card.style.marginBottom = '12px';
-  card.style.border = '1px solid #ddd';
-  card.style.borderRadius = '8px';
-  card.style.padding = '8px 10px';
-  card.style.background = '#fafafa';
+  card.style.display       = 'flex';
+  card.style.alignItems    = 'center';
+  card.style.gap           = '16px';
+  card.style.marginBottom  = '12px';
+  card.style.border        = '1px solid #ddd';
+  card.style.borderRadius  = '8px';
+  card.style.padding       = '8px 10px';
+  card.style.background    = '#fafafa';
 
   const info = document.createElement('div');
-  info.style.fontSize = '14px';
+  info.style.fontSize   = '14px';
   info.style.fontWeight = '600';
-  info.textContent = `Fase ${faseNumero} — Tempo: ${tempoFmt}`;
+  info.textContent      = `Fase ${faseNumero} — Tempo: ${tempoFmt}`;
   card.appendChild(info);
 
   const mini = document.createElement('div');
-  mini.style.position = 'relative';
-  mini.style.width = areaLivre.clientWidth + 'px';
-  mini.style.height = areaLivre.clientHeight + 'px';
+  mini.style.position   = 'relative';
+  mini.style.width      = areaLivre.clientWidth + 'px';
+  mini.style.height     = areaLivre.clientHeight + 'px';
   mini.style.background = '#000';
-  mini.style.border = '1px solid #ccc';
-  mini.style.overflow = 'hidden';
+  mini.style.border     = '1px solid #ccc';
+  mini.style.overflow   = 'hidden';
   mini.style.flexShrink = '0';
 
   const pecas = Array.from(areaLivre.querySelectorAll('.peca'));
   pecas.forEach(orig => {
-    const clone = orig.cloneNode(true);    // copia estilo (left/top/transform)
+    const clone = orig.cloneNode(true);
     clone.style.position = 'absolute';
     mini.appendChild(clone);
   });
@@ -279,8 +298,7 @@ function registrarFaseSnapshot(faseIndex, tempoGastoSegundos) {
   temposFases[faseIndex] = tempoGastoSegundos || 0;
 }
 
-
-// ====================== REGRAS DE TEMPO ======================
+// ====================== REGRAS DE TEMPO / PONTUAÇÃO ======================
 const regrasTempo = {
   3:  [ [45,4] ],
   4:  [ [45,4] ],
@@ -423,11 +441,25 @@ const fases = [
   } // 14 (rotacionado)
 ];
 
+// ====================== PEÇAS POR FASE ======================
+function getLimitesDaFase(index = faseAtual) {
+  const fase = fases[index];
+  const posicoes = fase.pecas || fase;
+  const total = posicoes.length;
+
+  return {
+    min: total,
+    max: total
+  };
+}
+
+
+
 // ====================== REFERÊNCIA ======================
 function montarReferencia() {
   referencia.innerHTML = '';
 
-  const fase = fases[faseAtual];
+  const fase     = fases[faseAtual];
   const posicoes = fase.pecas || fase;
 
   if (fase.rotacionarReferencia) {
@@ -449,7 +481,7 @@ function montarReferencia() {
 
   posicoes.forEach(g => {
     const peca = document.createElement('div');
-    peca.className = 'peca ' + g.tipo;
+    peca.className    = 'peca ' + g.tipo;
     peca.style.width  = '71px';
     peca.style.height = '71px';
 
@@ -467,18 +499,33 @@ function montarAreaLivre() {
   areaLivre.innerHTML = '';
   areaLivre.ondragover = e => e.preventDefault();
   areaLivre.ondrop = function (e) {
-    e.preventDefault();
-    const tipoData = e.dataTransfer.getData('text');
-    const partes   = tipoData.split('_');
-    const tipo     = partes[0];
-    const rot      = partes[1] || 0;
-    const areaRect = areaLivre.getBoundingClientRect();
-    let offsetX    = e.clientX - areaRect.left - dragOffset.x;
-    let offsetY    = e.clientY - areaRect.top  - dragOffset.y;
-    offsetX        = Math.max(0, Math.min(offsetX, areaLivre.clientWidth  - 70));
-    offsetY        = Math.max(0, Math.min(offsetY, areaLivre.clientHeight - 70));
+    
+  e.preventDefault();
 
-    const novaPeca = document.createElement('div');
+ const { min, max } = getLimitesDaFase();
+const pecasAtuais = areaLivre.querySelectorAll('.peca').length;
+
+if (pecasAtuais >= max) {
+  if (resultado) {
+    resultado.textContent = `⚠️ Você só pode usar ${max} peça(s) nesta fase.`;
+  }
+  return;
+}
+
+
+  const tipoData = e.dataTransfer.getData('text');
+  const partes   = tipoData.split('_');
+  const tipo     = partes[0];
+  const rot      = partes[1] || 0;
+  const areaRect = areaLivre.getBoundingClientRect();
+  let offsetX    = e.clientX - areaRect.left - dragOffset.x;
+  let offsetY    = e.clientY - areaRect.top  - dragOffset.y;
+  offsetX        = Math.max(0, Math.min(offsetX, areaLivre.clientWidth  - 70));
+  offsetY        = Math.max(0, Math.min(offsetY, areaLivre.clientHeight - 70));
+
+  const novaPeca = document.createElement('div');
+  // ... resto do código igual
+
     novaPeca.className = 'peca ' + tipo;
     novaPeca.style.left = offsetX + 'px';
     novaPeca.style.top  = offsetY + 'px';
@@ -493,12 +540,21 @@ function montarAreaLivre() {
 
     if (tipo === 'dividida') {
       const botao = document.createElement('span');
-      botao.textContent = '🔄';
-      botao.style.cursor = 'pointer';
-      botao.style.fontSize = '1.5rem';
+      botao.textContent      = '🔄';
+      botao.style.cursor     = 'pointer';
+      botao.style.fontSize   = '1.5rem';
       botao.style.pointerEvents = 'auto';
-      botao.style.zIndex = '2';
-      botao.style.position = 'relative';
+      botao.style.zIndex     = '2';
+      // posição vai ser controlada pelo CSS (.peca.dividida span)
+
+      // impede que o mousedown do botão dispare o arraste
+      botao.addEventListener('mousedown', e => {
+        e.stopPropagation();
+        e.preventDefault();
+      });
+      botao.addEventListener('touchstart', e => {
+        e.stopPropagation();
+      });
 
       botao.onclick = function (e) {
         e.stopPropagation();
@@ -511,18 +567,14 @@ function montarAreaLivre() {
       novaPeca.appendChild(botao);
     }
 
-    // ❌ NÃO usamos mais draggable aqui
-    // novaPeca.setAttribute('draggable', 'true');
-    // novaPeca.addEventListener('dragstart', dragStartHandlerLivre);
-
+    // não usamos draggable dentro da área livre
     areaLivre.appendChild(novaPeca);
   };
 }
 
-
 function dragStartHandlerLivre(e) {
   const tipo = this.getAttribute('data-tipo');
-  const rot = this.getAttribute('data-rot') || '0';
+  const rot  = this.getAttribute('data-rot') || '0';
   const rect = this.getBoundingClientRect();
   dragOffset.x = e.clientX - rect.left;
   dragOffset.y = e.clientY - rect.top;
@@ -530,8 +582,8 @@ function dragStartHandlerLivre(e) {
   e.dataTransfer.setData('text', tipo + '_' + rot);
 
   const imagemFantasma = this.cloneNode(true);
-  imagemFantasma.style.position = 'absolute';
-  imagemFantasma.style.top = '-1000px';
+  imagemFantasma.style.position  = 'absolute';
+  imagemFantasma.style.top       = '-1000px';
   imagemFantasma.style.transform = this.style.transform;
   document.body.appendChild(imagemFantasma);
   e.dataTransfer.setDragImage(imagemFantasma, dragOffset.x, dragOffset.y);
@@ -545,10 +597,23 @@ function dragStartHandlerLivre(e) {
 // ====================== VERIFICAÇÃO ======================
 function verificar() {
   const pecas = Array.from(areaLivre.querySelectorAll('.peca'));
-  const fase = fases[faseAtual];
+  const { min, max } = getLimitesDaFase();
+
+// quantidade insuficiente
+if (pecas.length < min) {
+  resultado.textContent = `⚠️ Faltam peças! Coloque ${min} peça(s) antes de verificar.`;
+  return;
+}
+
+// quantidade excessiva (caso o jogador altere no DOM manualmente)
+if (pecas.length > max) {
+  resultado.textContent = `⚠️ Peças demais! Use exatamente ${max} peça(s).`;
+  return;
+}
+
+  const fase  = fases[faseAtual];
   const gabaritoOriginal = fase.pecas || fase;
 
-  // tempo total gasto na fase (desde que ela começou)
   const tempoGasto = inicioFaseTimestamp
     ? Math.floor((Date.now() - inicioFaseTimestamp) / 1000)
     : 0;
@@ -564,7 +629,7 @@ function verificar() {
   const usuario = pecas.map(p => ({
     tipo: p.getAttribute('data-tipo'),
     x: Math.round(parseFloat(p.style.left)) - minX,
-    y: Math.round(parseFloat(p.style.top)) - minY,
+    y: Math.round(parseFloat(p.style.top))  - minY,
     rot: parseInt(p.getAttribute('data-rot') || 0)
   }));
 
@@ -588,16 +653,18 @@ function verificar() {
   );
 
   if (correto) {
-    let pontos = 0;
+    let pontos   = 0;
     const faseIndex = faseAtual;
 
-    if (faseIndex < 3) {
+    // Fases 1 a 6 com tentativas (mantido do jogo original)
+    if (faseIndex < 6) {
       pontos = tentativaAtual === 0 ? 2 : 1;
-    } else if (regrasTempo.hasOwnProperty(faseIndex)) {
-      const tempoGastoLocal = tempoGasto;
+    }
+    // Demais fases com regras de tempo (mantido do jogo original)
+    else if (regrasTempo.hasOwnProperty(faseIndex)) {
       const regras = regrasTempo[faseIndex];
       for (const [limite, p] of regras) {
-        if (tempoGastoLocal <= limite) {
+        if (tempoGasto <= limite) {
           pontos = p;
           break;
         }
@@ -607,24 +674,25 @@ function verificar() {
     }
 
     pontuacoes[faseIndex] = pontos;
-    resultado.textContent = "";
-    tentativaAtual = 0;
+    resultado.textContent  = "";
+    tentativaAtual         = 0;
     proximaFase(tempoGasto);
   } else {
     tentativaAtual++;
 
-    if (faseAtual < 3 && tentativaAtual < tentativasPorFase[faseAtual]) {
+    if (faseAtual < 6 && tentativaAtual < tentativasPorFase[faseAtual]) {
       resultado.textContent = "❌ Tente novamente.";
       clearInterval(cronometroIntervalo);
       iniciarContagemRegressiva();
     } else {
       pontuacoes[faseAtual] = 0;
-      tentativaAtual = 0;
+      tentativaAtual        = 0;
       resultado.textContent = "";
       proximaFase(tempoGasto);
     }
   }
 }
+
 // ====================== PRÓXIMA FASE / FINAL ======================
 function proximaFase(tempoGastoSegundos) {
   clearInterval(cronometroIntervalo);
@@ -644,7 +712,7 @@ function proximaFase(tempoGastoSegundos) {
     }
 
     if (resultado) {
-      resultado.textContent = 'Aguarde, enviando os resultados...';
+      resultado.textContent = 'Aguarde, finalizando o teste...';
     }
     enviarResultados();
     return;
@@ -657,50 +725,35 @@ function proximaFase(tempoGastoSegundos) {
   inicioFaseTimestamp = Date.now();
 }
 
-
 // ====================== INFOS DA FASE ======================
 function atualizarFaseInfo() {
   if (faseInfoEl) {
-    faseInfoEl.textContent = `Fase ${faseAtual + 1}`;
+    const { min, max } = getLimitesDaFase();
+    faseInfoEl.textContent = `Fase ${faseAtual + 1} — você deve usar exatamente ${min} peça(s).`;
   }
 }
 
+
+
 function atualizarPecasDisponiveis() {
   pecasDisponiveis.innerHTML = '';
-  const fase = fases[faseAtual];
+  const fase  = fases[faseAtual];
   const tipos = fase.tiposDisponiveis || ['vermelha', 'branca', 'dividida'];
 
   tipos.forEach(tipo => {
     const peca = document.createElement('div');
     peca.className = 'peca ' + tipo;
     peca.setAttribute('data-tipo', tipo);
-    peca.setAttribute('data-rot', '0');
+    peca.setAttribute('data-rot',  '0');
     peca.setAttribute('draggable', 'true');
     ativarToqueMobile(peca);
 
-    if (tipo === 'dividida') {
-      const botao = document.createElement('span');
-      botao.textContent = '🔄';
-      botao.style.cursor = 'pointer';
-      botao.style.fontSize = '1.5rem';
-      botao.style.pointerEvents = 'auto';
-      botao.style.zIndex = '2';
-      botao.style.position = 'relative';
-
-      botao.onclick = function (e) {
-        e.stopPropagation();
-        let anguloAtual = parseInt(peca.getAttribute('data-rot') || 0);
-        let novoAngulo = (anguloAtual + 45) % 360;
-        peca.style.transform = `rotate(${novoAngulo}deg)`;
-        peca.setAttribute('data-rot', novoAngulo);
-      };
-
-      peca.appendChild(botao);
-    }
+    // aqui na prateleira NÃO colocamos botão de giro,
+    // o botão 🔄 aparece só nas peças soltas na área preta
 
     peca.addEventListener('dragstart', function (e) {
       const tipo = this.getAttribute('data-tipo');
-      const rot = this.getAttribute('data-rot') || '0';
+      const rot  = this.getAttribute('data-rot') || '0';
       const rect = this.getBoundingClientRect();
       dragOffset.x = e.clientX - rect.left;
       dragOffset.y = e.clientY - rect.top;
@@ -708,8 +761,8 @@ function atualizarPecasDisponiveis() {
       e.dataTransfer.setData('text', tipo + '_' + rot);
 
       const imagemFantasma = this.cloneNode(true);
-      imagemFantasma.style.position = 'absolute';
-      imagemFantasma.style.top = '-1000px';
+      imagemFantasma.style.position  = 'absolute';
+      imagemFantasma.style.top       = '-1000px';
       imagemFantasma.style.transform = this.style.transform;
       document.body.appendChild(imagemFantasma);
       e.dataTransfer.setDragImage(imagemFantasma, dragOffset.x, dragOffset.y);
@@ -736,10 +789,10 @@ function startGame() {
     btnIniciar.style.display = 'none';
   }
 
-  faseAtual = 0;
-  pontuacoes = Array(fases.length).fill(0);
+  faseAtual      = 0;
+  pontuacoes     = Array(fases.length).fill(0);
   tentativaAtual = 0;
-  temposFases = [];
+  temposFases    = [];
   if (painelResumo && painelResumo.parentNode) {
     painelResumo.parentNode.removeChild(painelResumo);
   }
@@ -764,7 +817,7 @@ function buildCSVFromScores() {
 
 async function submitResultsToSheet() {
   if (!currentCPF) return { ok:false, error:'missing_cpf' };
-  const csv = buildCSVFromScores();
+  const csv   = buildCSVFromScores();
   const total = (pontuacoes || []).reduce((a,b)=>a+(+b||0), 0);
 
   try {
@@ -783,18 +836,15 @@ async function submitResultsToSheet() {
 // ====================== DRIVE (IMAGEM) ======================
 function buildDriveFileName() {
   const cpfStr = currentCPF || 'sem_cpf';
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const ts     = new Date().toISOString().replace(/[:.]/g, '-');
 
-  // Se achou o nome na planilha "Patients", usa CuboWISCIV_nomePaciente_CPF_etc
   if (currentPatientName && currentPatientName.trim()) {
     const safeName = currentPatientName.trim().replace(/\s+/g, '_');
-    return `CuboWISCIV_${safeName}_${cpfStr}_${ts}.png`;
+    return `CuboWAISIII_${safeName}_${cpfStr}_${ts}.png`;
   }
 
-  // Se NÃO achou o nome, usa só o CPF no nome do arquivo
-  return `CuboWISCIV_${cpfStr}_${ts}.png`;
+  return `CuboWAISIII_${cpfStr}_${ts}.png`;
 }
-
 
 async function uploadScreenshotToDrive(canvas) {
   if (!DRIVE_UPLOAD_URL) {
@@ -830,7 +880,7 @@ async function uploadScreenshotToDrive(canvas) {
   return json;
 }
 
-// ====================== BOTÃO FINAL ======================
+// ====================== ENVIO FINAL ======================
 async function enviarResultados() {
   if (!currentCPF) {
     alert('CPF não encontrado. Atualize a página e tente novamente.');
@@ -847,13 +897,11 @@ async function enviarResultados() {
   }
 
   try {
-    // 1) envia pontuação para a planilha
     const resp = await submitResultsToSheet();
     if (!resp || !resp.ok) {
       throw new Error('Não consegui salvar na planilha.');
     }
 
-    // 2) gera imagem ÚNICA com todas as fases + tempos
     const painel = garantirPainelResumo();
     const canvas = await html2canvas(painel, {
       useCORS: true,
@@ -861,10 +909,8 @@ async function enviarResultados() {
       scale: 2
     });
 
-    // 3) envia imagem para o Drive
     await uploadScreenshotToDrive(canvas);
 
-    // 4) redireciona para o site da clínica
     window.location.href = 'https://www.integradaneuropsicologia.com.br/jogosdeestimula%C3%A7%C3%A3omental';
   } catch (err) {
     console.error(err);
@@ -872,7 +918,6 @@ async function enviarResultados() {
     if (btnVerificar) {
       btnVerificar.disabled = false;
       btnVerificar.textContent = 'Tentar enviar novamente';
-      // agora o botão serve só para reenviar (não verifica mais nada)
       btnVerificar.onclick = enviarResultados;
     }
 
@@ -916,12 +961,13 @@ function iniciarFaseDireta() {
 }
 
 // ====================== TOQUE (MOBILE) ======================
+// ====================== TOQUE (MOBILE) ======================
 function ativarToqueMobile(peca) {
   let offsetX, offsetY;
 
   peca.addEventListener('touchstart', function(e) {
     const touch = e.touches[0];
-    const rect = peca.getBoundingClientRect();
+    const rect  = peca.getBoundingClientRect();
     offsetX = touch.clientX - rect.left;
     offsetY = touch.clientY - rect.top;
     peca.style.zIndex = 1000;
@@ -929,21 +975,29 @@ function ativarToqueMobile(peca) {
 
   peca.addEventListener('touchmove', function(e) {
     e.preventDefault();
-    const touch = e.touches[0];
+    const touch    = e.touches[0];
     const areaRect = areaLivre.getBoundingClientRect();
-    const x = touch.clientX - areaRect.left - offsetX;
-    const y = touch.clientY - areaRect.top - offsetY;
+    const x        = touch.clientX - areaRect.left - offsetX;
+    const y        = touch.clientY - areaRect.top  - offsetY;
+
     peca.style.position = 'absolute';
-    peca.style.left = Math.max(0, Math.min(x, areaLivre.clientWidth - 70)) + 'px';
-    peca.style.top  = Math.max(0, Math.min(y, areaLivre.clientHeight - 70)) + 'px';
+    peca.style.left     = x + 'px';
+    peca.style.top      = y + 'px';
+
+    // se saiu da área preta, remove (só se estiver dentro da áreaLivre)
+    if (removeIfOutsideArea(peca)) {
+      peca.style.zIndex = 1;
+    }
   });
 
   peca.addEventListener('touchend', function() {
-    peca.style.zIndex = 1;
+    // se a peça ainda existir, volta z-index
+    if (document.body.contains(peca)) {
+      peca.style.zIndex = 1;
+    }
   });
 }
 
-// ====================== BOTÃO "VERIFICAR" ======================
 // ====================== BOTÕES PRINCIPAIS ======================
 const btnVerificar = document.getElementById('btnVerificar');
 if (btnVerificar) {
@@ -956,4 +1010,3 @@ if (btnIniciar) {
     startGame();
   });
 }
-
