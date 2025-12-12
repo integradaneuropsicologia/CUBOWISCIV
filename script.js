@@ -1,5 +1,3 @@
-
-
 // ====================== CONFIGURAÇÕES ======================
 const WEBAPP = "https://script.google.com/macros/s/AKfycbzKB9upgtV4jRI1SNA1nfBcqGRTXQMLRVBpb7QAxvkPtKm_RnWOsjmUN8aguZpYE8_Qgg/exec";
 const SHEET_NAME = "MontagemLivre";
@@ -45,11 +43,13 @@ function jsonp(url, params = {}) {
     const qs = new URLSearchParams(params).toString();
     const s = document.createElement("script");
     const timeout = setTimeout(() => { cleanup(); reject("timeout"); }, 15000);
+
     function cleanup() {
       clearTimeout(timeout);
       delete window[cb];
       s.remove();
     }
+
     window[cb] = (payload) => { cleanup(); resolve(payload); };
     s.onerror = () => { cleanup(); reject("script_error"); };
     s.src = `${url}?${qs}`;
@@ -139,28 +139,83 @@ const faseInfoEl       = document.getElementById('faseInfo');
 const cronometroEl     = document.getElementById('cronometro');
 const pecasDisponiveis = document.getElementById('pecasDisponiveis');
 
-let inicioFaseTimestamp = null;
-let faseAtual           = 0;
-let dragOffset          = { x: 0, y: 0 };
-let tentativaAtual      = 0;
-let pontuacoes          = [];
-let tempoRestante       = 0;
-let cronometroIntervalo = null;
-let painelResumo        = null;
-let temposFases         = [];
+let inicioFaseTimestamp      = null;
+let inicioTentativaTimestamp = null;
 
-// Arraste manual dentro da área de montagem (mantém a rotação visual)
-// Arraste manual dentro da área de montagem (mantém a rotação visual)
+let faseAtual              = 0;
+let dragOffset             = { x: 0, y: 0 };
+let tentativaAtual         = 0;  // contador de erros na fase (mantém a lógica)
+let tentativaNumeroNaFase  = 1;  // 1,2,3... (pra rotular as tentativas)
+let resultadosFases        = [];
+let tempoRestante          = 0;
+let cronometroIntervalo    = null;
+let painelResumo           = null;
+let temposFases            = [];
+
+// ====================== GIRO (DUAS ÚLTIMAS FASES) ======================
+function ultimasDuasFases(index = faseAtual) {
+  return index >= (fases.length - 2);
+}
+function aplicarTamanhoAreaLivre() {
+  areaLivre.classList.toggle('areaGrande', ultimasDuasFases());
+}
+
+function adicionarBotaoGiro(pecaEl) {
+  if (pecaEl.querySelector('span')) return;
+
+  const botao = document.createElement('span');
+  botao.textContent = '🔄';
+  botao.style.cursor = 'pointer';
+  botao.style.pointerEvents = 'auto';
+  botao.style.zIndex = '2';
+
+  // impede que o botão dispare arraste
+  botao.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); });
+  botao.addEventListener('touchstart', e => { e.stopPropagation(); });
+
+  botao.onclick = function (e) {
+    e.stopPropagation();
+    let anguloAtual = parseInt(pecaEl.getAttribute('data-rot') || 0);
+    let novoAngulo  = (anguloAtual + 45) % 360;
+    pecaEl.style.transform = `rotate(${novoAngulo}deg)`;
+    pecaEl.setAttribute('data-rot', novoAngulo);
+  };
+
+  pecaEl.appendChild(botao);
+}
+
+// ====================== RESULTADOS (SEM PONTOS) ======================
+function registrarResultadoDaFase(faseIndex, status, tentativasFalhas, tempoGastoSegundos) {
+  if (!Array.isArray(resultadosFases)) resultadosFases = [];
+  resultadosFases[faseIndex] = {
+    status: String(status || ''),
+    tentativas: Number(tentativasFalhas || 0),
+    tempo: Number(tempoGastoSegundos || 0)
+  };
+}
+
+function buildCSVFromResults() {
+  return (resultadosFases || []).map(r => {
+    if (!r) return '';
+    const status = String(r.status || '').toUpperCase();
+    const tent   = Number(r.tentativas || 0);
+    const tempo  = Number(r.tempo || 0);
+    return `${status}:${tent}:${tempo}`;
+  }).join(',');
+}
+
+function calcularTempoTotal() {
+  return (temposFases || []).reduce((a, b) => a + (+b || 0), 0);
+}
+
+// ====================== ARRASTE MANUAL (MOUSE) ======================
 let mouseDraggingPiece = null;
 let mouseDragOffsetX = 0;
 let mouseDragOffsetY = 0;
 
 function enableMouseDrag(peca) {
   peca.addEventListener('mousedown', function (e) {
-    // Só botão esquerdo
     if (e.button !== 0) return;
-
-    // Se começou no botão de giro, NÃO inicia arraste
     if (e.target.tagName === 'SPAN') return;
 
     e.preventDefault();
@@ -174,9 +229,7 @@ function enableMouseDrag(peca) {
   });
 }
 
-// helper: remove peça da área preta se ela sair totalmente dela
 function removeIfOutsideArea(peca) {
-  // só remove se a peça estiver de fato dentro da áreaLivre
   if (!peca || peca.parentElement !== areaLivre) return false;
 
   const areaRect  = areaLivre.getBoundingClientRect();
@@ -195,7 +248,6 @@ function removeIfOutsideArea(peca) {
   return false;
 }
 
-// Move a peça conforme o mouse
 document.addEventListener('mousemove', function (e) {
   if (!mouseDraggingPiece) return;
 
@@ -207,22 +259,20 @@ document.addEventListener('mousemove', function (e) {
   mouseDraggingPiece.style.left = x + 'px';
   mouseDraggingPiece.style.top  = y + 'px';
 
-  // se saiu da área preta, some com a peça
   if (removeIfOutsideArea(mouseDraggingPiece)) {
     mouseDraggingPiece = null;
   }
 });
 
-// Solta a peça
 document.addEventListener('mouseup', function () {
   if (!mouseDraggingPiece) return;
-  // se ainda existe (não foi removida), volta o z-index
   if (document.body.contains(mouseDraggingPiece)) {
     mouseDraggingPiece.style.zIndex = 1;
   }
   mouseDraggingPiece = null;
 });
-// ====================== RESUMO / SNAPSHOT ======================
+
+// ====================== RESUMO / SNAPSHOT (FASES + TENTATIVAS) ======================
 function formatarTempoSegundos(totalSegundos) {
   totalSegundos = totalSegundos || 0;
   const min = Math.floor(totalSegundos / 60);
@@ -247,7 +297,7 @@ function garantirPainelResumo() {
   painelResumo.style.fontFamily = "'Segoe UI', sans-serif";
 
   const titulo = document.createElement('h2');
-  titulo.textContent = 'Montagem Livre - Resumo das Fases';
+  titulo.textContent = 'Montagem Livre - Resumo (Fases e Tentativas)';
   titulo.style.margin = '0 0 16px 0';
   painelResumo.appendChild(titulo);
 
@@ -255,10 +305,8 @@ function garantirPainelResumo() {
   return painelResumo;
 }
 
-function registrarFaseSnapshot(faseIndex, tempoGastoSegundos) {
-  const painel    = garantirPainelResumo();
-  const faseNumero = faseIndex + 1;
-  const tempoFmt   = formatarTempoSegundos(tempoGastoSegundos || 0);
+function criarCardSnapshotRotulado(labelTexto) {
+  const painel = garantirPainelResumo();
 
   const card = document.createElement('div');
   card.style.display       = 'flex';
@@ -272,8 +320,8 @@ function registrarFaseSnapshot(faseIndex, tempoGastoSegundos) {
 
   const info = document.createElement('div');
   info.style.fontSize   = '14px';
-  info.style.fontWeight = '600';
-  info.textContent      = `Fase ${faseNumero} — Tempo: ${tempoFmt}`;
+  info.style.fontWeight = '700';
+  info.textContent      = labelTexto;
   card.appendChild(info);
 
   const mini = document.createElement('div');
@@ -295,24 +343,26 @@ function registrarFaseSnapshot(faseIndex, tempoGastoSegundos) {
   card.appendChild(mini);
   painel.appendChild(card);
 
+  return card;
+}
+
+function registrarFaseSnapshot(faseIndex, tempoGastoSegundos, statusFase = '') {
+  const faseNumero = faseIndex + 1;
+  const tempoFmt   = formatarTempoSegundos(tempoGastoSegundos || 0);
+  const statusTxt  = statusFase ? ` — ${String(statusFase).toUpperCase()}` : '';
+  criarCardSnapshotRotulado(`Fase ${faseNumero} — Final${statusTxt} — Tempo fase: ${tempoFmt}`);
   temposFases[faseIndex] = tempoGastoSegundos || 0;
 }
 
-// ====================== REGRAS DE TEMPO / PONTUAÇÃO ======================
-const regrasTempo = {
-  3:  [ [45,4] ],
-  4:  [ [45,4] ],
-  5:  [ [75,4] ],
-  6:  [ [75,4] ],
-  7:  [ [75,4] ],
-  8:  [ [10,7], [20,6], [30,5], [Infinity,4] ],
-  9:  [ [10,7], [20,6], [30,5], [Infinity,4] ],
-  10: [ [30,7], [50,6], [70,5], [Infinity,4] ],
-  11: [ [30,7], [50,6], [70,5], [Infinity,4] ],
-  12: [ [30,7], [50,6], [70,5], [Infinity,4] ],
-  13: [ [30,7], [50,6], [70,5], [Infinity,4] ],
-};
+function registrarTentativaSnapshot(faseIndex, tentativaNumero, tipo, tempoTentativaSeg, tempoFaseSeg) {
+  const faseNumero = faseIndex + 1;
+  const tTent = formatarTempoSegundos(tempoTentativaSeg || 0);
+  const tFase = formatarTempoSegundos(tempoFaseSeg || 0);
+  const tipoTxt = String(tipo || '').toUpperCase();
+  criarCardSnapshotRotulado(`Fase ${faseNumero} — Tentativa ${tentativaNumero} — ${tipoTxt} — Tempo tentativa: ${tTent} (fase: ${tFase})`);
+}
 
+// ====================== TENTATIVAS E TEMPO ======================
 const tentativasPorFase = [2,2,2,1,1,1,1,1,1,1,1,1,1,1];
 const tempoPorFase      = [30,45,45,45,45,75,75,75,75,75,120,120,120,120];
 
@@ -446,14 +496,8 @@ function getLimitesDaFase(index = faseAtual) {
   const fase = fases[index];
   const posicoes = fase.pecas || fase;
   const total = posicoes.length;
-
-  return {
-    min: total,
-    max: total
-  };
+  return { min: total, max: total };
 }
-
-
 
 // ====================== REFERÊNCIA ======================
 function montarReferencia() {
@@ -473,11 +517,8 @@ function montarReferencia() {
   referencia.style.gridTemplateColumns = `repeat(${colunas}, 70px)`;
   referencia.style.gridTemplateRows    = `repeat(${linhas}, 70px)`;
 
-  if (faseAtual >= 9) {
-    referencia.style.border = 'none';
-  } else {
-    referencia.style.border = '1.5px solid black';
-  }
+  const isUltimaFase = (faseAtual === (fases.length - 1));
+referencia.style.border = isUltimaFase ? 'none' : '';
 
   posicoes.forEach(g => {
     const peca = document.createElement('div');
@@ -498,100 +539,50 @@ function montarReferencia() {
 function montarAreaLivre() {
   areaLivre.innerHTML = '';
   areaLivre.ondragover = e => e.preventDefault();
+
   areaLivre.ondrop = function (e) {
-    
-  e.preventDefault();
+    e.preventDefault();
 
- const { min, max } = getLimitesDaFase();
-const pecasAtuais = areaLivre.querySelectorAll('.peca').length;
+    const { max } = getLimitesDaFase();
+    const pecasAtuais = areaLivre.querySelectorAll('.peca').length;
 
-if (pecasAtuais >= max) {
-  if (resultado) {
-    resultado.textContent = `⚠️ Você só pode usar ${max} peça(s) nesta fase.`;
-  }
-  return;
-}
+    if (pecasAtuais >= max) {
+      if (resultado) resultado.textContent = `⚠️ Você só pode usar ${max} peça(s) nesta fase.`;
+      return;
+    }
 
+    const tipoData = e.dataTransfer.getData('text');
+    const partes   = tipoData.split('_');
+    const tipo     = partes[0];
+    const rot      = partes[1] || 0;
 
-  const tipoData = e.dataTransfer.getData('text');
-  const partes   = tipoData.split('_');
-  const tipo     = partes[0];
-  const rot      = partes[1] || 0;
-  const areaRect = areaLivre.getBoundingClientRect();
-  let offsetX    = e.clientX - areaRect.left - dragOffset.x;
-  let offsetY    = e.clientY - areaRect.top  - dragOffset.y;
-  offsetX        = Math.max(0, Math.min(offsetX, areaLivre.clientWidth  - 70));
-  offsetY        = Math.max(0, Math.min(offsetY, areaLivre.clientHeight - 70));
+    const areaRect = areaLivre.getBoundingClientRect();
+    let offsetX    = e.clientX - areaRect.left - dragOffset.x;
+    let offsetY    = e.clientY - areaRect.top  - dragOffset.y;
 
-  const novaPeca = document.createElement('div');
-  // ... resto do código igual
+    offsetX = Math.max(0, Math.min(offsetX, areaLivre.clientWidth  - 70));
+    offsetY = Math.max(0, Math.min(offsetY, areaLivre.clientHeight - 70));
 
+    const novaPeca = document.createElement('div');
     novaPeca.className = 'peca ' + tipo;
     novaPeca.style.left = offsetX + 'px';
     novaPeca.style.top  = offsetY + 'px';
+
     novaPeca.setAttribute('data-tipo', tipo);
     novaPeca.setAttribute('data-rot',  rot);
     novaPeca.style.transform = `rotate(${rot}deg)`;
 
-    // toca: arraste por toque (mobile)
     ativarToqueMobile(novaPeca);
-    // mouse: arraste manual (mantém rotação)
     enableMouseDrag(novaPeca);
 
-    if (tipo === 'dividida') {
-      const botao = document.createElement('span');
-      botao.textContent      = '🔄';
-      botao.style.cursor     = 'pointer';
-      botao.style.fontSize   = '1.5rem';
-      botao.style.pointerEvents = 'auto';
-      botao.style.zIndex     = '2';
-      // posição vai ser controlada pelo CSS (.peca.dividida span)
-
-      // impede que o mousedown do botão dispare o arraste
-      botao.addEventListener('mousedown', e => {
-        e.stopPropagation();
-        e.preventDefault();
-      });
-      botao.addEventListener('touchstart', e => {
-        e.stopPropagation();
-      });
-
-      botao.onclick = function (e) {
-        e.stopPropagation();
-        let anguloAtual = parseInt(novaPeca.getAttribute('data-rot') || 0);
-        let novoAngulo  = (anguloAtual + 45) % 360;
-        novaPeca.style.transform = `rotate(${novoAngulo}deg)`;
-        novaPeca.setAttribute('data-rot', novoAngulo);
-      };
-
-      novaPeca.appendChild(botao);
+    // ✅ nas duas últimas fases: qualquer peça gira
+    // ✅ nas outras fases: só a dividida gira
+    if (tipo === 'dividida' || ultimasDuasFases()) {
+      adicionarBotaoGiro(novaPeca);
     }
 
-    // não usamos draggable dentro da área livre
     areaLivre.appendChild(novaPeca);
   };
-}
-
-function dragStartHandlerLivre(e) {
-  const tipo = this.getAttribute('data-tipo');
-  const rot  = this.getAttribute('data-rot') || '0';
-  const rect = this.getBoundingClientRect();
-  dragOffset.x = e.clientX - rect.left;
-  dragOffset.y = e.clientY - rect.top;
-
-  e.dataTransfer.setData('text', tipo + '_' + rot);
-
-  const imagemFantasma = this.cloneNode(true);
-  imagemFantasma.style.position  = 'absolute';
-  imagemFantasma.style.top       = '-1000px';
-  imagemFantasma.style.transform = this.style.transform;
-  document.body.appendChild(imagemFantasma);
-  e.dataTransfer.setDragImage(imagemFantasma, dragOffset.x, dragOffset.y);
-
-  setTimeout(() => {
-    this.remove();
-    document.body.removeChild(imagemFantasma);
-  }, 1);
 }
 
 // ====================== VERIFICAÇÃO ======================
@@ -599,29 +590,27 @@ function verificar() {
   const pecas = Array.from(areaLivre.querySelectorAll('.peca'));
   const { min, max } = getLimitesDaFase();
 
-// quantidade insuficiente
-if (pecas.length < min) {
-  resultado.textContent = `⚠️ Faltam peças! Coloque ${min} peça(s) antes de verificar.`;
-  return;
-}
+  if (pecas.length < min) {
+    resultado.textContent = `⚠️ Faltam peças! Coloque ${min} peça(s) antes de verificar.`;
+    return;
+  }
 
-// quantidade excessiva (caso o jogador altere no DOM manualmente)
-if (pecas.length > max) {
-  resultado.textContent = `⚠️ Peças demais! Use exatamente ${max} peça(s).`;
-  return;
-}
+  if (pecas.length > max) {
+    resultado.textContent = `⚠️ Peças demais! Use exatamente ${max} peça(s).`;
+    return;
+  }
 
   const fase  = fases[faseAtual];
   const gabaritoOriginal = fase.pecas || fase;
 
-  const tempoGasto = inicioFaseTimestamp
-    ? Math.floor((Date.now() - inicioFaseTimestamp) / 1000)
+  const agora = Date.now();
+  const tempoGastoFase = inicioFaseTimestamp
+    ? Math.floor((agora - inicioFaseTimestamp) / 1000)
     : 0;
 
-  if (!pecas.length) {
-    resultado.textContent = "❌ Coloque as peças antes de verificar.";
-    return;
-  }
+  const tempoGastoTentativa = inicioTentativaTimestamp
+    ? Math.floor((agora - inicioTentativaTimestamp) / 1000)
+    : 0;
 
   const minX = Math.min(...pecas.map(p => parseInt(p.style.left)));
   const minY = Math.min(...pecas.map(p => parseInt(p.style.top)));
@@ -652,57 +641,58 @@ if (pecas.length > max) {
     )
   );
 
+  const maxTentativas = tentativasPorFase[faseAtual] || 1;
+  const temTentativas = maxTentativas > 1;
+  const podeTentarDeNovo = temTentativas && (tentativaNumeroNaFase < maxTentativas);
+
   if (correto) {
-    let pontos   = 0;
-    const faseIndex = faseAtual;
-
-    // Fases 1 a 6 com tentativas (mantido do jogo original)
-    if (faseIndex < 6) {
-      pontos = tentativaAtual === 0 ? 2 : 1;
-    }
-    // Demais fases com regras de tempo (mantido do jogo original)
-    else if (regrasTempo.hasOwnProperty(faseIndex)) {
-      const regras = regrasTempo[faseIndex];
-      for (const [limite, p] of regras) {
-        if (tempoGasto <= limite) {
-          pontos = p;
-          break;
-        }
-      }
-    } else {
-      pontos = 1;
+    if (temTentativas && tentativaNumeroNaFase > 1) {
+      registrarTentativaSnapshot(faseAtual, tentativaNumeroNaFase, 'acerto', tempoGastoTentativa, tempoGastoFase);
     }
 
-    pontuacoes[faseIndex] = pontos;
-    resultado.textContent  = "";
-    tentativaAtual         = 0;
-    proximaFase(tempoGasto);
-  } else {
-    tentativaAtual++;
+    const tentativasFalhas = tentativaAtual;
+    resultado.textContent = "";
+    tentativaAtual = 0;
 
-    if (faseAtual < 6 && tentativaAtual < tentativasPorFase[faseAtual]) {
-      resultado.textContent = "❌ Tente novamente.";
-      clearInterval(cronometroIntervalo);
-      iniciarContagemRegressiva();
-    } else {
-      pontuacoes[faseAtual] = 0;
-      tentativaAtual        = 0;
-      resultado.textContent = "";
-      proximaFase(tempoGasto);
-    }
+    proximaFase(tempoGastoFase, 'ok', tentativasFalhas);
+    return;
   }
+
+  // ERRO
+  tentativaAtual++;
+
+  if (podeTentarDeNovo) {
+    registrarTentativaSnapshot(faseAtual, tentativaNumeroNaFase, 'erro', tempoGastoTentativa, tempoGastoFase);
+
+    resultado.textContent = "❌ Tente novamente.";
+    clearInterval(cronometroIntervalo);
+
+    tentativaNumeroNaFase += 1;
+    iniciarContagemRegressiva();
+    return;
+  }
+
+  // ERRO FINAL (acabou tentativa)
+  if (temTentativas) {
+    registrarTentativaSnapshot(faseAtual, tentativaNumeroNaFase, 'erro_final', tempoGastoTentativa, tempoGastoFase);
+  }
+
+  const tentativasFalhas = tentativaAtual;
+  resultado.textContent = "";
+  tentativaAtual = 0;
+
+  proximaFase(tempoGastoFase, 'fail', tentativasFalhas);
 }
 
 // ====================== PRÓXIMA FASE / FINAL ======================
-function proximaFase(tempoGastoSegundos) {
+function proximaFase(tempoGastoSegundos = 0, statusFase = 'next', tentativasFalhas = 0) {
   clearInterval(cronometroIntervalo);
 
-  // guarda a imagem da fase atual (montagem + tempo)
-  registrarFaseSnapshot(faseAtual, tempoGastoSegundos);
+  registrarFaseSnapshot(faseAtual, tempoGastoSegundos, statusFase);
+  registrarResultadoDaFase(faseAtual, statusFase, tentativasFalhas, tempoGastoSegundos);
 
   faseAtual++;
 
-  // ✅ ACABOU O TESTE
   if (faseAtual >= fases.length) {
     const btnVerificar = document.getElementById('btnVerificar');
     if (btnVerificar) {
@@ -711,29 +701,26 @@ function proximaFase(tempoGastoSegundos) {
       btnVerificar.textContent = 'Aguarde...';
     }
 
-    if (resultado) {
-      resultado.textContent = 'Aguarde, finalizando o teste...';
-    }
+    if (resultado) resultado.textContent = 'Aguarde, finalizando o teste...';
     enviarResultados();
     return;
   }
 
-  // segue o jogo normalmente nas fases anteriores
   resultado.textContent = '';
   tentativaAtual = 0;
+  tentativaNumeroNaFase = 1;
+  inicioTentativaTimestamp = null;
+
   iniciarFaseDireta();
-  inicioFaseTimestamp = Date.now();
 }
 
 // ====================== INFOS DA FASE ======================
 function atualizarFaseInfo() {
   if (faseInfoEl) {
-    const { min, max } = getLimitesDaFase();
+    const { min } = getLimitesDaFase();
     faseInfoEl.textContent = `Fase ${faseAtual + 1} — você deve usar exatamente ${min} peça(s).`;
   }
 }
-
-
 
 function atualizarPecasDisponiveis() {
   pecasDisponiveis.innerHTML = '';
@@ -748,13 +735,11 @@ function atualizarPecasDisponiveis() {
     peca.setAttribute('draggable', 'true');
     ativarToqueMobile(peca);
 
-    // aqui na prateleira NÃO colocamos botão de giro,
-    // o botão 🔄 aparece só nas peças soltas na área preta
-
     peca.addEventListener('dragstart', function (e) {
       const tipo = this.getAttribute('data-tipo');
       const rot  = this.getAttribute('data-rot') || '0';
       const rect = this.getBoundingClientRect();
+
       dragOffset.x = e.clientX - rect.left;
       dragOffset.y = e.clientY - rect.top;
 
@@ -778,54 +763,52 @@ function atualizarPecasDisponiveis() {
 
 // ====================== INÍCIO DO JOGO ======================
 function startGame() {
-  // esconde o texto + botão de início (bloco inteiro)
   const orient = document.getElementById('orientacoesInicial');
-  if (orient) {
-    orient.style.display = 'none';
-  }
+  if (orient) orient.style.display = 'none';
 
   const btnIniciar = document.getElementById('btnIniciar');
-  if (btnIniciar) {
-    btnIniciar.style.display = 'none';
-  }
+  if (btnIniciar) btnIniciar.style.display = 'none';
+  moverInfosParaAbaixoDaReferencia();
 
-  faseAtual      = 0;
-  pontuacoes     = Array(fases.length).fill(0);
+
+  faseAtual = 0;
+
+  resultadosFases = Array(fases.length).fill(null);
   tentativaAtual = 0;
-  temposFases    = [];
+  tentativaNumeroNaFase = 1;
+  temposFases = [];
+
+  inicioFaseTimestamp = Date.now();
+  inicioTentativaTimestamp = null;
+
   if (painelResumo && painelResumo.parentNode) {
     painelResumo.parentNode.removeChild(painelResumo);
   }
   painelResumo = null;
 
   montarReferencia();
-
-  // deixa a imagem de referência maior depois que o jogo começa
   referencia.classList.add('grande');
+aplicarTamanhoAreaLivre();
 
   montarAreaLivre();
   atualizarFaseInfo();
   atualizarPecasDisponiveis();
   iniciarContagemRegressiva();
-  inicioFaseTimestamp = Date.now();
 }
 
-// ====================== PLANILHA (PONTUAÇÃO) ======================
-function buildCSVFromScores() {
-  return (pontuacoes || []).join(',');
-}
-
+// ====================== PLANILHA (RESULTADOS) ======================
 async function submitResultsToSheet() {
   if (!currentCPF) return { ok:false, error:'missing_cpf' };
-  const csv   = buildCSVFromScores();
-  const total = (pontuacoes || []).reduce((a,b)=>a+(+b||0), 0);
+
+  const csv        = buildCSVFromResults();
+  const tempoTotal = calcularTempoTotal();
 
   try {
     return await jsonp(WEBAPP, {
       action: 'submit',
       cpf: currentCPF,
       csv,
-      total,
+      total: tempoTotal,
       sheet: SHEET_NAME
     });
   } catch (e) {
@@ -840,10 +823,10 @@ function buildDriveFileName() {
 
   if (currentPatientName && currentPatientName.trim()) {
     const safeName = currentPatientName.trim().replace(/\s+/g, '_');
-    return `CuboWAISIII_${safeName}_${cpfStr}_${ts}.png`;
+    return `CuboWISCIV_${safeName}_${cpfStr}_${ts}.png`;
   }
 
-  return `CuboWAISIII_${cpfStr}_${ts}.png`;
+  return `CuboWISCIV_${cpfStr}_${ts}.png`;
 }
 
 async function uploadScreenshotToDrive(canvas) {
@@ -931,14 +914,19 @@ async function enviarResultados() {
 
 // ====================== CRONÔMETRO ======================
 function iniciarContagemRegressiva() {
+  // início da tentativa atual
+  inicioTentativaTimestamp = Date.now();
+
   const tempoTotal = tempoPorFase[faseAtual];
   tempoRestante = tempoTotal;
+
   if (cronometroEl) {
     cronometroEl.textContent = `⏳ Tempo: ${tempoRestante}s`;
   }
 
   cronometroIntervalo = setInterval(() => {
     tempoRestante--;
+
     if (cronometroEl) {
       cronometroEl.textContent = `⏳ Tempo: ${tempoRestante}s`;
     }
@@ -946,21 +934,59 @@ function iniciarContagemRegressiva() {
     if (tempoRestante <= 0) {
       clearInterval(cronometroIntervalo);
       resultado.textContent = "⏰ Tempo esgotado!";
-      verificar();
+
+      const tempoFase = inicioFaseTimestamp
+        ? Math.floor((Date.now() - inicioFaseTimestamp) / 1000)
+        : tempoTotal;
+
+      // timeout encerra a fase direto
+      proximaFase(tempoFase, 'timeout', tentativaAtual);
     }
   }, 1000);
 }
 
 function iniciarFaseDireta() {
+  aplicarTamanhoAreaLivre();
   montarReferencia();
   montarAreaLivre();
   atualizarFaseInfo();
   atualizarPecasDisponiveis();
-  iniciarContagemRegressiva();
+
+  tentativaNumeroNaFase = 1;
+  tentativaAtual = 0;
+
   inicioFaseTimestamp = Date.now();
+  inicioTentativaTimestamp = null;
+
+  iniciarContagemRegressiva();
 }
 
-// ====================== TOQUE (MOBILE) ======================
+function moverInfosParaAbaixoDaReferencia() {
+  const ref = document.getElementById('referencia');
+  if (!ref) return;
+
+  // cria um “slot” logo abaixo da referência (só 1 vez)
+  let wrap = document.getElementById('infoAbaixoReferencia');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'infoAbaixoReferencia';
+    wrap.style.marginTop = '12px';
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.alignItems = 'center';
+
+    // coloca o slot logo depois da referência (dentro do referenciaBox)
+    ref.insertAdjacentElement('afterend', wrap);
+  }
+
+  // move as infos pra esse slot
+  ['faseInfo', 'cronometro', 'resultado'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) wrap.appendChild(el);
+  });
+}
+
+
 // ====================== TOQUE (MOBILE) ======================
 function ativarToqueMobile(peca) {
   let offsetX, offsetY;
@@ -984,14 +1010,12 @@ function ativarToqueMobile(peca) {
     peca.style.left     = x + 'px';
     peca.style.top      = y + 'px';
 
-    // se saiu da área preta, remove (só se estiver dentro da áreaLivre)
     if (removeIfOutsideArea(peca)) {
       peca.style.zIndex = 1;
     }
   });
 
   peca.addEventListener('touchend', function() {
-    // se a peça ainda existir, volta z-index
     if (document.body.contains(peca)) {
       peca.style.zIndex = 1;
     }
